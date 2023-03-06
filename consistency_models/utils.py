@@ -63,7 +63,7 @@ def fmnist_dl(batch_size=128, num_workers=4):
             [
                 T.Pad(2),
                 T.ToTensor(),
-                T.Nromalize(0.5, 0.5),
+                T.Normalize(0.5, 0.5),
             ]
         )
     
@@ -74,7 +74,7 @@ def fmnist_dl(batch_size=128, num_workers=4):
             transform=tf,
             )
 
-    dataloader = DataLoader(datasetm, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 
 def get_data(dataset="mnist", batch_size=128, num_workers=4):
     if dataset == "mnist":
