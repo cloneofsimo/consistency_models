@@ -1,3 +1,10 @@
+<!-- #region -->
+<p align="center">
+<img  src="contents/mainfigure.png">
+</p>
+<!-- #endregion -->
+
+
 # Consistency Models
 
 <!-- #region -->
