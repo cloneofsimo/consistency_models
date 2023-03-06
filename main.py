@@ -15,6 +15,7 @@ from torchvision.utils import save_image, make_grid
 
 from consistency_models import ConsistencyModel, kerras_boundaries
 
+
 def mnist_dl():
     tf = transforms.Compose(
         [
@@ -32,8 +33,9 @@ def mnist_dl():
     )
 
     dataloader = DataLoader(dataset, batch_size=128, shuffle=True, num_workers=20)
-    
+
     return dataloader
+
 
 def cifar10_dl():
     tf = transforms.Compose(
@@ -51,23 +53,29 @@ def cifar10_dl():
     )
 
     dataloader = DataLoader(dataset, batch_size=128, shuffle=True, num_workers=20)
-    
+
     return dataloader
 
-def train(n_epoch: int = 100, device="cuda:0", dataloader= mnist_dl(), n_channels = 1, name = "mnist"):
-    model = ConsistencyModel(n_channels)
+
+def train(
+    n_epoch: int = 100,
+    device="cuda:0",
+    dataloader=mnist_dl(),
+    n_channels=1,
+    name="mnist",
+):
+    model = ConsistencyModel(n_channels, D=256)
     model.to(device)
     optim = torch.optim.AdamW(model.parameters(), lr=1e-4)
 
     # Define \theta_{-}, which is EMA of the params
-    ema_model = ConsistencyModel(n_channels)
+    ema_model = ConsistencyModel(n_channels, D=256)
     ema_model.to(device)
     ema_model.load_state_dict(model.state_dict())
 
     for epoch in range(1, n_epoch):
         N = math.ceil(math.sqrt((epoch * (150**2 - 4) / n_epoch) + 4) - 1) + 1
         boundaries = kerras_boundaries(7.0, 0.002, N, 80.0).to(device)
-        
 
         pbar = tqdm(dataloader)
         loss_ema = None
@@ -102,7 +110,7 @@ def train(n_epoch: int = 100, device="cuda:0", dataloader= mnist_dl(), n_channel
         with torch.no_grad():
             # Sample 5 Steps
             xh = model.sample(
-                torch.randn_like(x).to(device = device) * 80.0,
+                torch.randn_like(x).to(device=device) * 80.0,
                 list(reversed([5.0, 10.0, 20.0, 40.0, 80.0])),
             )
             xh = (xh * 0.5 + 0.5).clamp(0, 1)
@@ -111,7 +119,7 @@ def train(n_epoch: int = 100, device="cuda:0", dataloader= mnist_dl(), n_channel
 
             # Sample 2 Steps
             xh = model.sample(
-                torch.randn_like(x).to(device = device) * 80.0,
+                torch.randn_like(x).to(device=device) * 80.0,
                 list(reversed([2.0, 80.0])),
             )
             xh = (xh * 0.5 + 0.5).clamp(0, 1)
@@ -123,5 +131,5 @@ def train(n_epoch: int = 100, device="cuda:0", dataloader= mnist_dl(), n_channel
 
 
 if __name__ == "__main__":
-    #train()
-    train(dataloader=cifar10_dl(), n_channels=3, name = "cifar10")
+    # train()
+    train(dataloader=cifar10_dl(), n_channels=3, name="cifar10")
