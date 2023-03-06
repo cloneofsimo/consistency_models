@@ -32,9 +32,9 @@ config = SimpleNamespace(
 )
 
 class EMA:
-    def __init__(self, model):
+    def __init__(self, model, device=config.device):
         self.model = model
-        self.ema_model = deepcopy(model).eval().requires_grad_(False).to(model.device)
+        self.ema_model = deepcopy(model).eval().requires_grad_(False).to(device)
 
     def update(self, N):
         with torch.no_grad():
@@ -53,7 +53,7 @@ def train(config):
     scheduler = OneCycleLR(optim, max_lr=config.lr, 
                            steps_per_epoch=len(dataloader), epochs=config.n_epochs)
 
-    ema = EMA(model)
+    ema = EMA(model, device=config.device)
 
     for epoch in range(1, config.n_epochs):
         N = math.ceil(math.sqrt((epoch * (150**2 - 4) / config.n_epochs) + 4) - 1) + 1
