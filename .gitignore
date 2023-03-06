@@ -4,3 +4,5 @@ data
 build
 *.egg-info
 __pycache__
+data/
+wandb/
