@@ -85,7 +85,7 @@ def train(config):
             if config.wandb:
                 wandb.log({"loss": loss.item(),
                            "loss_ema": loss_ema,
-                           "lr": scheduler.get_last_lr()[0]}
+                           "lr": scheduler.get_last_lr()[0],
                            "N": N})    
             pbar.set_description(f"loss: {loss_ema:.10f}, mu: {mu:.10f}")
 
