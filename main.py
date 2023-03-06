@@ -33,7 +33,7 @@ config = SimpleNamespace(
 
 class EMA:
     def __init__(self, model):
-        self.model
+        self.model = model
         self.ema_model = deepcopy(model).eval().requires_grad_(False).to(model.device)
 
     def update(self, N):
