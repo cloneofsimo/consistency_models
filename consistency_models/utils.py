@@ -1,4 +1,3 @@
-
 import torch
 
 
@@ -12,4 +11,3 @@ def kerras_boundaries(sigma, eps, N, T):
             for i in range(N)
         ]
     )
-

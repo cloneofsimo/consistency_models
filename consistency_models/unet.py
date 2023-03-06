@@ -54,10 +54,10 @@ class ConsistencyModel(nn.Module):
                 blk(2 * D, 2 * D),
                 blk(2 * 2 * D, D),
                 blk(D, D),
-                nn.Conv2d(256, 256, 3, padding=1),
+                nn.Conv2d(2 * D, 2 * D, 3, padding=1),
             ]
         )
-        self.last = nn.Conv2d(256 + n_channel, n_channel, 3, padding=1)
+        self.last = nn.Conv2d(2 * D + n_channel, n_channel, 3, padding=1)
 
     def forward(self, x, t) -> torch.Tensor:
         if isinstance(t, float):
