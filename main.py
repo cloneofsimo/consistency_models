@@ -4,6 +4,7 @@
 import wandb
 
 import argparse
+from contextlib import nullcontext
 from types import SimpleNamespace
 from typing import List
 from copy import deepcopy
@@ -11,6 +12,7 @@ from tqdm import tqdm
 import math
 
 import torch
+from torch import autocast
 from torch.optim.lr_scheduler import OneCycleLR
 from torchvision.utils import save_image, make_grid
 
@@ -20,15 +22,16 @@ from consistency_models.utils import get_data
 WANDB_PROJECT = "consistency-model"
 
 config = SimpleNamespace(
-    img_size = 32,
-    batch_size =128,
-    num_workers = 8,
+    img_size=32,
+    batch_size=128,
+    num_workers=8,
     dataset="mnist",
-    lr=3e-4,
+    lr=1e-4,
     n_epochs=10,
     sample_every_n_epoch=1,
     device="cuda" if torch.cuda.is_available() else "cpu",
     wandb=True,
+    mixed_precision=True,
 )
 
 class EMA:
@@ -70,7 +73,7 @@ def train(config):
     n_channels = 3 if config.dataset=="cifar10" else 1
     model = ConsistencyModel(n_channels, D=256)
     model.to(config.device)
-    optim = torch.optim.AdamW(model.parameters())
+    optim = torch.optim.AdamW(model.parameters(), eps=1e-5)
     scheduler = OneCycleLR(optim, max_lr=config.lr, 
                            steps_per_epoch=len(dataloader), epochs=config.n_epochs)
 
@@ -91,9 +94,8 @@ def train(config):
             t = torch.randint(0, N - 1, (x.shape[0], 1), device=config.device)
             t_0 = boundaries[t]
             t_1 = boundaries[t + 1]
-
-            loss = model.loss(x, z, t_0, t_1, ema_model=ema.ema_model)
-
+            with autocast(device_type="cuda") if config.mixed_precision else nullcontext():
+                loss = model.loss(x, z, t_0, t_1, ema_model=ema.ema_model)
             loss.backward()
             if loss_ema is None:
                 loss_ema = loss.item()
