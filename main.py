@@ -6,6 +6,7 @@ import wandb
 import argparse
 from types import SimpleNamespace
 from typing import List
+from copy import deepcopy
 from tqdm import tqdm
 import math
 
@@ -29,10 +30,17 @@ config = SimpleNamespace(
 )
 
 class EMA:
-
     def __init__(self, model):
-        pass
+        self.model
+        self.ema_model = deepcopy(model).eval().requires_grad_(False).to(model.device)
 
+    def update(self, N):
+        with torch.no_grad():
+            mu = math.exp(2 * math.log(0.95) / N)
+            # update \theta_{-}
+            for p, ema_p in zip(self.model.parameters(), self.ema_model.parameters()):
+                ema_p.mul_(mu).add_(p, alpha=1 - mu)
+    
 
 def train(config):
     dataloader = get_data(config.dataset)
@@ -41,10 +49,7 @@ def train(config):
     model.to(config.device)
     optim = torch.optim.AdamW(model.parameters(), lr=1e-4)
 
-    # Define \theta_{-}, which is EMA of the params
-    ema_model = ConsistencyModel(n_channels, D=256)
-    ema_model.to(config.device)
-    ema_model.load_state_dict(model.state_dict())
+    ema = EMA(model)
 
     for epoch in range(1, config.n_epochs):
         N = math.ceil(math.sqrt((epoch * (150**2 - 4) / config.n_epochs) + 4) - 1) + 1
@@ -71,15 +76,12 @@ def train(config):
                 loss_ema = 0.9 * loss_ema + 0.1 * loss.item()
 
             optim.step()
-            with torch.no_grad():
-                mu = math.exp(2 * math.log(0.95) / N)
-                # update \theta_{-}
-                for p, ema_p in zip(model.parameters(), ema_model.parameters()):
-                    ema_p.mul_(mu).add_(p, alpha=1 - mu)
+            ema.update(N)
             if config.wandb:
                 wandb.log({"loss": loss.item(),
                            "loss_ema": loss_ema,
-                           "mu": mu})    
+                           "mu": mu,
+                           "N": N})    
             pbar.set_description(f"loss: {loss_ema:.10f}, mu: {mu:.10f}")
 
         model.eval()
