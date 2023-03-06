@@ -48,43 +48,40 @@ class ConsistencyModel(nn.Module):
         super(ConsistencyModel, self).__init__()
 
         self.eps = eps
-        D = 256
+        D = 128
         self.freqs = torch.exp(
-            -math.log(10000)
-            * torch.arange(start=0, end=D // 2, dtype=torch.float32)
-            / (D // 2)
+            -math.log(10000) * torch.arange(start=0, end=D, dtype=torch.float32) / D
         )
 
         self.down = nn.Sequential(
             *[
-                nn.Conv2d(n_channel, 128, 3, padding=1),
-                blk(128, 128),
-                blk(128, D),
+                nn.Conv2d(n_channel, D, 3, padding=1),
                 blk(D, D),
+                blk(D, 2 * D),
+                blk(2 * D, 2 * D),
             ]
         )
 
         self.time_downs = nn.Sequential(
-            nn.Linear(D, 128),
-            nn.Linear(D, 128),
-            nn.Linear(D, D),
-            nn.Linear(D, D),
+            nn.Linear(2 * D, D),
+            nn.Linear(2 * D, D),
+            nn.Linear(2 * D, 2 * D),
+            nn.Linear(2 * D, 2 * D),
         )
 
-        self.mid = blk(D, D)
+        self.mid = blk(2 * D, 2 * D)
 
         self.up = nn.Sequential(
             *[
+                blk(2 * D, 2 * D),
+                blk(2 * 2 * D, D),
                 blk(D, D),
-                blk(2 * D, 128),
-                blk(128, 128),
                 nn.Conv2d(256, 256, 3, padding=1),
             ]
         )
         self.last = nn.Conv2d(256 + n_channel, n_channel, 3, padding=1)
 
     def forward(self, x, t) -> torch.Tensor:
-
         if isinstance(t, float):
             t = (
                 torch.tensor([t] * x.shape[0], dtype=torch.float32)
@@ -128,23 +125,20 @@ class ConsistencyModel(nn.Module):
         return c_skip_t[:, :, None, None] * x_ori + c_out_t[:, :, None, None] * x
 
     def loss(self, x, z, t1, t2, ema_model):
-
         x2 = x + z * t2[:, :, None, None]
         x2 = self(x2, t2)
-    
+
         with torch.no_grad():
             x1 = x + z * t1[:, :, None, None]
             x1 = ema_model(x1, t1)
-            
+
         return F.mse_loss(x1, x2)
 
     @torch.no_grad()
     def sample(self, x, ts: List[float]):
-
         x = self(x, ts[0])
 
         for t in ts[1:]:
-
             z = torch.randn_like(x)
             x = x + math.sqrt(t**2 - self.eps**2) * z
             x = self(x, t)
@@ -153,7 +147,6 @@ class ConsistencyModel(nn.Module):
 
 
 def train_mnist(n_epoch: int = 100, device="cuda:0"):
-
     model = ConsistencyModel(1)
     model.to(device)
 
@@ -173,16 +166,14 @@ def train_mnist(n_epoch: int = 100, device="cuda:0"):
     )
 
     dataloader = DataLoader(dataset, batch_size=128, shuffle=True, num_workers=20)
-    optim = torch.optim.Adam(model.parameters(), lr=4e-4)
-    
+    optim = torch.optim.AdamW(model.parameters(), lr=1e-4)
+
     # Define \theta_{-}, which is EMA of the params
     ema_model = ConsistencyModel(1)
     ema_model.to(device)
     ema_model.load_state_dict(model.state_dict())
 
-
     for epoch in range(1, n_epoch):
-
         N = math.ceil(math.sqrt((epoch * (150**2 - 4) / n_epoch) + 4) - 1) + 1
         boundaries = kerras_boundaries(7.0, 0.002, N, 80.0).to(device)
         print(boundaries)
@@ -206,26 +197,35 @@ def train_mnist(n_epoch: int = 100, device="cuda:0"):
                 loss_ema = loss.item()
             else:
                 loss_ema = 0.9 * loss_ema + 0.1 * loss.item()
-                
+
             optim.step()
             with torch.no_grad():
                 mu = math.exp(2 * math.log(0.95) / N)
                 # update \theta_{-}
                 for p, ema_p in zip(model.parameters(), ema_model.parameters()):
                     ema_p.mul_(mu).add_(p, alpha=1 - mu)
-            
+
             pbar.set_description(f"loss: {loss_ema:.10f}, mu: {mu:.10f}")
-            
-                
+
         model.eval()
         with torch.no_grad():
+            # Sample 5 Steps
             xh = model.sample(
                 torch.randn(16, 1, 32, 32, device=device) * 80.0,
-                list(reversed([5.0, 20.0, 30.0, 40.0, 50.0, 80.0])),
+                list(reversed([5.0, 10.0, 20.0, 40.0, 80.0])),
             )
             xh = (xh * 0.5 + 0.5).clamp(0, 1)
             grid = make_grid(xh, nrow=4)
-            save_image(grid, f"./contents/ct_sample_{epoch}.png")
+            save_image(grid, f"./contents/ct_sample_5step_{epoch}.png")
+
+            # Sample 2 Steps
+            xh = model.sample(
+                torch.randn(16, 1, 32, 32, device=device) * 80.0,
+                list(reversed([2.0, 80.0])),
+            )
+            xh = (xh * 0.5 + 0.5).clamp(0, 1)
+            grid = make_grid(xh, nrow=4)
+            save_image(grid, f"./contents/ct_sample_2step_{epoch}.png")
 
             # save model
             torch.save(model.state_dict(), f"./ct_mnist.pth")
