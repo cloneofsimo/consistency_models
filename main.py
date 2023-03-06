@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from torch.optim.swa_utils import AveragedModel
 
 from torchvision.datasets import MNIST
 from torchvision import transforms
@@ -126,13 +127,15 @@ class ConsistencyModel(nn.Module):
 
         return c_skip_t[:, :, None, None] * x_ori + c_out_t[:, :, None, None] * x
 
-    def loss(self, x, z, t1, t2):
+    def loss(self, x, z, t1, t2, ema_model):
 
-        x1 = x + z * t1[:, :, None, None]
         x2 = x + z * t2[:, :, None, None]
-        x1 = self(x1, t1)
-        # TODO: we need EMA here.
         x2 = self(x2, t2)
+    
+        with torch.no_grad():
+            x1 = x + z * t1[:, :, None, None]
+            x1 = ema_model(x1, t1)
+            
         return F.mse_loss(x1, x2)
 
     @torch.no_grad()
@@ -171,6 +174,12 @@ def train_mnist(n_epoch: int = 100, device="cuda:0"):
 
     dataloader = DataLoader(dataset, batch_size=128, shuffle=True, num_workers=20)
     optim = torch.optim.Adam(model.parameters(), lr=4e-4)
+    
+    # Define \theta_{-}, which is EMA of the params
+    ema_model = ConsistencyModel(1)
+    ema_model.to(device)
+    ema_model.load_state_dict(model.state_dict())
+
 
     for epoch in range(1, n_epoch):
 
@@ -190,16 +199,24 @@ def train_mnist(n_epoch: int = 100, device="cuda:0"):
             t_0 = boundaries[t]
             t_1 = boundaries[t + 1]
 
-            loss = model.loss(x, z, t_0, t_1)
+            loss = model.loss(x, z, t_0, t_1, ema_model=ema_model)
 
             loss.backward()
             if loss_ema is None:
                 loss_ema = loss.item()
             else:
                 loss_ema = 0.9 * loss_ema + 0.1 * loss.item()
-            pbar.set_description(f"loss: {loss_ema:.4f}")
+                
             optim.step()
-
+            with torch.no_grad():
+                mu = math.exp(2 * math.log(0.95) / N)
+                # update \theta_{-}
+                for p, ema_p in zip(model.parameters(), ema_model.parameters()):
+                    ema_p.mul_(mu).add_(p, alpha=1 - mu)
+            
+            pbar.set_description(f"loss: {loss_ema:.10f}, mu: {mu:.10f}")
+            
+                
         model.eval()
         with torch.no_grad():
             xh = model.sample(
