@@ -31,6 +31,7 @@ config = SimpleNamespace(
 class EMA:
 
     def __init__(self, model):
+        pass
 
 
 def train(config):
