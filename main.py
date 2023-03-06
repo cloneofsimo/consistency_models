@@ -24,7 +24,7 @@ config = SimpleNamespace(
     dataset="mnist",
     n_epochs=10,
     sample_every_n_epoch=1,
-    device="cpu",
+    device="cuda" if torch.cuda.is_available() else "cpu",
     wandb=True,
 )
 
