@@ -87,7 +87,7 @@ def train(config):
                            "loss_ema": loss_ema,
                            "lr": scheduler.get_last_lr()[0],
                            "N": N})    
-            pbar.set_description(f"loss: {loss_ema:.10f}, mu: {mu:.10f}")
+            pbar.set_description(f"loss: {loss_ema:.10f}, N: {N:.10f}")
 
         model.eval()
         with torch.no_grad():
