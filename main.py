@@ -110,7 +110,7 @@ def train(config):
             grid = make_grid(xh, nrow=4)
             save_image(grid, f"./contents/ct_{config.dataset}_sample_2step_{epoch}.png")
             if config.wandb:
-                wandb.log({"sampled_images_5": [wandb.Image(img.permute(1,2,0).squeeze().cpu().numpy()) for img in xh]})
+                wandb.log({"sampled_images_2": [wandb.Image(img.permute(1,2,0).squeeze().cpu().numpy()) for img in xh]})
 
             # save model
             torch.save(model.state_dict(), f"./ct_{config.dataset}.pth")
