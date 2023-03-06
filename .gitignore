@@ -1,3 +1,6 @@
 ct_*.png
 *.pth
 data
+build
+*.egg-info
+__pycache__
