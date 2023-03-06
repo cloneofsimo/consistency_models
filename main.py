@@ -43,6 +43,27 @@ class EMA:
         for p, ema_p in zip(self.model.parameters(), self.ema_model.parameters()):
             ema_p.mul_(mu).add_(p, alpha=1 - mu)
     
+def sample(model, x, epoch, values=[5.0, 10.0, 20.0, 40.0, 80.0]):
+    "Sample images from model"
+    model.eval()
+    with torch.inference_mode():
+        xh = model.sample(
+            torch.randn_like(x).to(device=config.device) * 80.0,
+            list(reversed(values)),
+        )
+        xh = (xh * 0.5 + 0.5).clamp(0, 1)
+        grid = make_grid(xh, nrow=4)
+        save_image(grid, f"./contents/ct_{config.dataset}_sample_{len(values)}step_{epoch}.png")
+        if config.wandb:
+            wandb.log({f"sampled_images_{len(values)}": [wandb.Image(img.permute(1,2,0).squeeze().cpu().numpy()) for img in xh]})
+    
+def save(model, epoch, model_name):
+    "Save model weights"
+    torch.save(model.state_dict(), f"./ct_{model_name}.pth")
+    if config.wandb:
+        at = wandb.Artifact("model", type="model", description="Model weights for Consistency Model", metadata={"epoch": epoch})
+        at.add_file(f"./ct_{model_name}.pth")
+        wandb.log_artifact(at)
 
 def train(config):
     dataloader = get_data(config.dataset)
@@ -89,35 +110,12 @@ def train(config):
                            "N": N})    
             pbar.set_description(f"loss: {loss_ema:.10f}, N: {N:.10f}")
 
-        model.eval()
-        with torch.inference_mode():
-            # Sample 5 Steps
-            xh = model.sample(
-                torch.randn_like(x).to(device=config.device) * 80.0,
-                list(reversed([5.0, 10.0, 20.0, 40.0, 80.0])),
-            )
-            xh = (xh * 0.5 + 0.5).clamp(0, 1)
-            grid = make_grid(xh, nrow=4)
-            save_image(grid, f"./contents/ct_{config.dataset}_sample_5step_{epoch}.png")
-            if config.wandb:
-                wandb.log({"sampled_images_5": [wandb.Image(img.permute(1,2,0).squeeze().cpu().numpy()) for img in xh]})
-            # Sample 2 Steps
-            xh = model.sample(
-                torch.randn_like(x).to(device=config.device) * 80.0,
-                list(reversed([2.0, 80.0])),
-            )
-            xh = (xh * 0.5 + 0.5).clamp(0, 1)
-            grid = make_grid(xh, nrow=4)
-            save_image(grid, f"./contents/ct_{config.dataset}_sample_2step_{epoch}.png")
-            if config.wandb:
-                wandb.log({"sampled_images_2": [wandb.Image(img.permute(1,2,0).squeeze().cpu().numpy()) for img in xh]})
-
-            # save model
-            torch.save(model.state_dict(), f"./ct_{config.dataset}.pth")
-            if config.wandb:
-                at = wandb.Artifact("model", type="model", description="Model weights for Consistency Model", metadata={"epoch": epoch})
-                at.add_file(f"./ct_{config.dataset}.pth")
-                wandb.log_artifact(at)
+        if epoch % config.sample_every_n_epoch == 0:
+            sample(model, x, epoch, values=[5.0, 10.0, 20.0, 40.0, 80.0])
+            sample(model, x, epoch, values=[5.0, 80.0])
+    
+    # only save model at the end
+    save(model, epoch, model_name=config.dataset)
 
 
 def parse_args(config):
