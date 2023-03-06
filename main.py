@@ -36,12 +36,12 @@ class EMA:
         self.model = model
         self.ema_model = deepcopy(model).eval().requires_grad_(False).to(device)
 
+    @torch.inference_mode()
     def update(self, N):
-        with torch.no_grad():
-            mu = math.exp(2 * math.log(0.95) / N)
-            # update \theta_{-}
-            for p, ema_p in zip(self.model.parameters(), self.ema_model.parameters()):
-                ema_p.mul_(mu).add_(p, alpha=1 - mu)
+        mu = math.exp(2 * math.log(0.95) / N)
+        # update \theta_{-}
+        for p, ema_p in zip(self.model.parameters(), self.ema_model.parameters()):
+            ema_p.mul_(mu).add_(p, alpha=1 - mu)
     
 
 def train(config):
@@ -90,7 +90,7 @@ def train(config):
             pbar.set_description(f"loss: {loss_ema:.10f}, N: {N:.10f}")
 
         model.eval()
-        with torch.no_grad():
+        with torch.inference_mode():
             # Sample 5 Steps
             xh = model.sample(
                 torch.randn_like(x).to(device=config.device) * 80.0,
@@ -99,7 +99,8 @@ def train(config):
             xh = (xh * 0.5 + 0.5).clamp(0, 1)
             grid = make_grid(xh, nrow=4)
             save_image(grid, f"./contents/ct_{config.dataset}_sample_5step_{epoch}.png")
-
+            if config.wandb:
+                wandb.log({"sampled_images_5": [wandb.Image(img.permute(1,2,0).squeeze().cpu().numpy()) for img in xh]})
             # Sample 2 Steps
             xh = model.sample(
                 torch.randn_like(x).to(device=config.device) * 80.0,
@@ -107,9 +108,9 @@ def train(config):
             )
             xh = (xh * 0.5 + 0.5).clamp(0, 1)
             grid = make_grid(xh, nrow=4)
-            if config.wandb:
-                wandb.log({"sampled_images": [wandb.Image(img.permute(1,2,0).squeeze().cpu().numpy()) for img in xh]})
             save_image(grid, f"./contents/ct_{config.dataset}_sample_2step_{epoch}.png")
+            if config.wandb:
+                wandb.log({"sampled_images_5": [wandb.Image(img.permute(1,2,0).squeeze().cpu().numpy()) for img in xh]})
 
             # save model
             torch.save(model.state_dict(), f"./ct_{config.dataset}.pth")
