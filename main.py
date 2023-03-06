@@ -21,10 +21,10 @@ WANDB_PROJECT = "consistency-model"
 
 config = SimpleNamespace(
     img_size = 32,
-    batch_size = 64,
-    num_workers = 4,
+    batch_size =128,
+    num_workers = 8,
     dataset="mnist",
-    lr=1e-3,
+    lr=3e-4,
     n_epochs=10,
     sample_every_n_epoch=1,
     device="cuda" if torch.cuda.is_available() else "cpu",
@@ -46,7 +46,7 @@ class EMA:
 
 def train(config):
     dataloader = get_data(config.dataset)
-    n_channels = 1 if config.dataset=="mnist" else 3
+    n_channels = 3 if config.dataset=="cifar10" else 1
     model = ConsistencyModel(n_channels, D=256)
     model.to(config.device)
     optim = torch.optim.AdamW(model.parameters())
