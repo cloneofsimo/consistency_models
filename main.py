@@ -11,6 +11,7 @@ from tqdm import tqdm
 import math
 
 import torch
+from torch.optim.lr_scheduler import OneCycleLR
 from torchvision.utils import save_image, make_grid
 
 from consistency_models import ConsistencyModel, kerras_boundaries
@@ -23,6 +24,7 @@ config = SimpleNamespace(
     batch_size = 64,
     num_workers = 4,
     dataset="mnist",
+    lr=1e-3,
     n_epochs=10,
     sample_every_n_epoch=1,
     device="cuda" if torch.cuda.is_available() else "cpu",
@@ -47,7 +49,9 @@ def train(config):
     n_channels = 1 if config.dataset=="mnist" else 3
     model = ConsistencyModel(n_channels, D=256)
     model.to(config.device)
-    optim = torch.optim.AdamW(model.parameters(), lr=1e-4)
+    optim = torch.optim.AdamW(model.parameters())
+    scheduler = OneCycleLR(optim, max_lr=config.lr, 
+                           steps_per_epoch=len(dataloader), epochs=config.n_epochs)
 
     ema = EMA(model)
 
@@ -67,7 +71,7 @@ def train(config):
             t_0 = boundaries[t]
             t_1 = boundaries[t + 1]
 
-            loss = model.loss(x, z, t_0, t_1, ema_model=ema_model)
+            loss = model.loss(x, z, t_0, t_1, ema_model=ema.ema_model)
 
             loss.backward()
             if loss_ema is None:
@@ -76,11 +80,12 @@ def train(config):
                 loss_ema = 0.9 * loss_ema + 0.1 * loss.item()
 
             optim.step()
+            scheduler.step()
             ema.update(N)
             if config.wandb:
                 wandb.log({"loss": loss.item(),
                            "loss_ema": loss_ema,
-                           "mu": mu,
+                           "lr": scheduler.get_last_lr()[0]}
                            "N": N})    
             pbar.set_description(f"loss: {loss_ema:.10f}, mu: {mu:.10f}")
 
