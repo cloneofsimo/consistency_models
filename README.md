@@ -28,9 +28,7 @@
 
 Unofficial Implementation of Consistency Models  ([paper](https://arxiv.org/abs/2303.01469)) in pytorch.
 
-Three days ago, legendary man [Yang Song](https://yang-song.net/) released entirely new set of generative model, called consistency models.
-
-There aren't yet any open implementations, so here is my attempt at it.
+Three days ago, legendary man [Yang Song](https://yang-song.net/) released entirely new set of generative model, called consistency models. There aren't yet any open implementations, so here is my attempt at it.
 
 
 ## What are they?
@@ -40,9 +38,15 @@ Diffusion models are amazing, because they enable you to sample high fidelity + 
 Progressive Distillation (Ho et al) solves this with distillating 2-steps of the diffusion model down to single step. Doing this N times boosts sampling speed by $2^N$. But is this the only way? Do we need to train diffusion model and distill it $n$ times? Yang didn't think so. Consistency model solves this by mainly trianing a model to make a consistent denosing for different timesteps (Ok I'm obviously simplifying)
 
 
+## Usage
 
+Install the package with
 
-Mainly implements consistency training:
+```bash
+pip install git+https://github.com/cloneofsimo/consistency_models.git
+```
+
+This repo mainly implements consistency training:
 
 $$
 L(\theta) = \mathbb{E}[d(f_\theta(x + t_{n + 1}z, t_{n + 1}), f_{\theta_{-}}(x + t_n z, t_n))]
@@ -58,7 +62,8 @@ x &\leftarrow f_\theta(x, t_n) \\
 \end{align}
 $$
 
-## Usage
+
+There is a self-contained MNIST training example on the root `main.py`.
 
 ```bash
 python main.py
