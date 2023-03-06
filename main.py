@@ -1,91 +1,63 @@
 # Implementation of Consistency Model
 # https://arxiv.org/pdf/2303.01469.pdf
 
+import wandb
 
+import argparse
+from types import SimpleNamespace
 from typing import List
 from tqdm import tqdm
 import math
 
 import torch
-from torch.utils.data import DataLoader
-
-from torchvision.datasets import MNIST, CIFAR10
-from torchvision import transforms
 from torchvision.utils import save_image, make_grid
 
 from consistency_models import ConsistencyModel, kerras_boundaries
+from consistency_models.utils import get_data
+
+WANDB_PROJECT = "consistency-model"
+
+config = SimpleNamespace(
+    img_size = 32,
+    batch_size = 64,
+    num_workers = 4,
+    dataset="mnist",
+    n_epochs=10,
+    sample_every_n_epoch=1,
+    device="cpu",
+    wandb=True,
+)
+
+class EMA:
+
+    def __init__(self, model):
 
 
-def mnist_dl():
-    tf = transforms.Compose(
-        [
-            transforms.Pad(2),
-            transforms.ToTensor(),
-            transforms.Normalize((0.5,), (0.5)),
-        ]
-    )
-
-    dataset = MNIST(
-        "./data",
-        train=True,
-        download=True,
-        transform=tf,
-    )
-
-    dataloader = DataLoader(dataset, batch_size=128, shuffle=True, num_workers=20)
-
-    return dataloader
-
-
-def cifar10_dl():
-    tf = transforms.Compose(
-        [
-            transforms.ToTensor(),
-            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-        ]
-    )
-
-    dataset = CIFAR10(
-        "./data",
-        train=True,
-        download=True,
-        transform=tf,
-    )
-
-    dataloader = DataLoader(dataset, batch_size=128, shuffle=True, num_workers=20)
-
-    return dataloader
-
-
-def train(
-    n_epoch: int = 100,
-    device="cuda:0",
-    dataloader=mnist_dl(),
-    n_channels=1,
-    name="mnist",
-):
+def train(config):
+    dataloader = get_data(config.dataset)
+    n_channels = 1 if config.dataset=="mnist" else 3
     model = ConsistencyModel(n_channels, D=256)
-    model.to(device)
+    model.to(config.device)
     optim = torch.optim.AdamW(model.parameters(), lr=1e-4)
 
     # Define \theta_{-}, which is EMA of the params
     ema_model = ConsistencyModel(n_channels, D=256)
-    ema_model.to(device)
+    ema_model.to(config.device)
     ema_model.load_state_dict(model.state_dict())
 
-    for epoch in range(1, n_epoch):
-        N = math.ceil(math.sqrt((epoch * (150**2 - 4) / n_epoch) + 4) - 1) + 1
-        boundaries = kerras_boundaries(7.0, 0.002, N, 80.0).to(device)
+    for epoch in range(1, config.n_epochs):
+        N = math.ceil(math.sqrt((epoch * (150**2 - 4) / config.n_epochs) + 4) - 1) + 1
+        boundaries = kerras_boundaries(7.0, 0.002, N, 80.0).to(config.device)
 
         pbar = tqdm(dataloader)
         loss_ema = None
         model.train()
         for x, _ in pbar:
             optim.zero_grad()
-            x = x.to(device)
+            x = x.to(config.device)
 
             z = torch.randn_like(x)
-            t = torch.randint(0, N - 1, (x.shape[0], 1), device=device)
+            t = torch.randint(0, N - 1, (x.shape[0], 1), device=config.device)
             t_0 = boundaries[t]
             t_1 = boundaries[t + 1]
 
@@ -103,33 +75,54 @@ def train(
                 # update \theta_{-}
                 for p, ema_p in zip(model.parameters(), ema_model.parameters()):
                     ema_p.mul_(mu).add_(p, alpha=1 - mu)
-
+            if config.wandb:
+                wandb.log({"loss": loss.item(),
+                           "loss_ema": loss_ema,
+                           "mu": mu})    
             pbar.set_description(f"loss: {loss_ema:.10f}, mu: {mu:.10f}")
 
         model.eval()
         with torch.no_grad():
             # Sample 5 Steps
             xh = model.sample(
-                torch.randn_like(x).to(device=device) * 80.0,
+                torch.randn_like(x).to(device=config.device) * 80.0,
                 list(reversed([5.0, 10.0, 20.0, 40.0, 80.0])),
             )
             xh = (xh * 0.5 + 0.5).clamp(0, 1)
             grid = make_grid(xh, nrow=4)
-            save_image(grid, f"./contents/ct_{name}_sample_5step_{epoch}.png")
+            save_image(grid, f"./contents/ct_{config.dataset}_sample_5step_{epoch}.png")
 
             # Sample 2 Steps
             xh = model.sample(
-                torch.randn_like(x).to(device=device) * 80.0,
+                torch.randn_like(x).to(device=config.device) * 80.0,
                 list(reversed([2.0, 80.0])),
             )
             xh = (xh * 0.5 + 0.5).clamp(0, 1)
             grid = make_grid(xh, nrow=4)
-            save_image(grid, f"./contents/ct_{name}_sample_2step_{epoch}.png")
+            if config.wandb:
+                wandb.log({"sampled_images": [wandb.Image(img.permute(1,2,0).squeeze().cpu().numpy()) for img in xh]})
+            save_image(grid, f"./contents/ct_{config.dataset}_sample_2step_{epoch}.png")
 
             # save model
-            torch.save(model.state_dict(), f"./ct_{name}.pth")
+            torch.save(model.state_dict(), f"./ct_{config.dataset}.pth")
+            if config.wandb:
+                at = wandb.Artifact("model", type="model", description="Model weights for Consistency Model", metadata={"epoch": epoch})
+                at.add_file(f"./ct_{config.dataset}.pth")
+                wandb.log_artifact(at)
 
+
+def parse_args(config):
+    parser = argparse.ArgumentParser(description='Run training baseline')
+    for k,v in config.__dict__.items():
+        parser.add_argument('--'+k, type=type(v), default=v)
+    args = vars(parser.parse_args())
+    
+    # update config with parsed args
+    for k, v in args.items():
+        setattr(config, k, v)
 
 if __name__ == "__main__":
-    # train()
-    train(dataloader=cifar10_dl(), n_channels=3, name="cifar10")
+    parse_args(config)
+    if config.wandb:
+        wandb.init(project=WANDB_PROJECT, config=config)
+    train(config)
