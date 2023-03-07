@@ -1,8 +1,17 @@
+from types import SimpleNamespace
+
 import torch
 from torch.utils.data import DataLoader
 
 import torchvision.transforms as T
 from torchvision.datasets import MNIST, CIFAR10, FashionMNIST
+
+config = SimpleNamespace(
+    img_size=32,
+    batch_size=128,
+    num_workers=4,
+    dataset="mnist",
+)
 
 
 
@@ -18,7 +27,7 @@ def kerras_boundaries(sigma, eps, N, T):
     )
 
 
-def mnist_dl(batch_size=128, num_workers=4):
+def mnist_dl(batch_size=config.batch_size, num_workers=config.num_workers):
     tf = T.Compose(
         [
             T.Pad(2),
@@ -39,7 +48,7 @@ def mnist_dl(batch_size=128, num_workers=4):
     return dataloader
 
 
-def cifar10_dl(batch_size=128, num_workers=4):
+def cifar10_dl(batch_size=config.batch_size, num_workers=config.num_workers):
     tf = T.Compose(
         [
             T.ToTensor(),
@@ -58,7 +67,7 @@ def cifar10_dl(batch_size=128, num_workers=4):
 
     return dataloader
 
-def fmnist_dl(batch_size=128, num_workers=4):
+def fmnist_dl(batch_size=config.batch_size, num_workers=config.num_workers):
     tf = T.Compose(
             [
                 T.Pad(2),
@@ -76,7 +85,7 @@ def fmnist_dl(batch_size=128, num_workers=4):
 
     return DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 
-def get_data(dataset="mnist", batch_size=128, num_workers=4):
+def get_data(dataset=config.dataset, batch_size=config.batch_size, num_workers=config.num_workers):
     if dataset == "mnist":
         return mnist_dl(batch_size, num_workers)
     elif dataset == "cifar10":
