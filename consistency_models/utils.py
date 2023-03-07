@@ -1,3 +1,4 @@
+import argparse
 from types import SimpleNamespace
 
 import torch
@@ -15,7 +16,7 @@ config = SimpleNamespace(
 
 
 
-def kerras_boundaries(sigma, eps, N, T):
+def karras_boundaries(sigma, eps, N, T):
     # This will be used to generate the boundaries for the time discretization
 
     return torch.tensor(
@@ -24,7 +25,7 @@ def kerras_boundaries(sigma, eps, N, T):
             ** sigma
             for i in range(N)
         ]
-    )
+    ).long()
 
 
 def mnist_dl(batch_size=config.batch_size, num_workers=config.num_workers):
@@ -94,3 +95,14 @@ def get_data(dataset=config.dataset, batch_size=config.batch_size, num_workers=c
         return fmnist_dl(batch_size, num_workers)
     else:
         raise ValueError(f"Unknown dataset: {dataset}")
+
+
+def parse_args(config):
+    parser = argparse.ArgumentParser(description='Run training baseline')
+    for k,v in config.__dict__.items():
+        parser.add_argument('--'+k, type=type(v), default=v)
+    args = vars(parser.parse_args())
+    
+    # update config with parsed args
+    for k, v in args.items():
+        setattr(config, k, v)
